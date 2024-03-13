@@ -1,4 +1,4 @@
-We added to FSM.do anf FSM_tb.sv
+We added to FSM.do anf FSM_tb.sv.
 We added RF.do, RF.sv, RF_selcheck_tb.sv, and RF_tb.sv. 
 There are some changes to be made in the RF.do file should the user wish
 to use one testbench or the other.
