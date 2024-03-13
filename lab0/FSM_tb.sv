@@ -44,4 +44,3 @@ module stimulus ();
      end
 
 endmodule // FSM_tb
-
