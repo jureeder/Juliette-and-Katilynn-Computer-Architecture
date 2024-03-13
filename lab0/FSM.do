@@ -11,11 +11,11 @@
 # WHICH IS THE PROPERTY OF MENTOR GRAPHICS CORPORATION
 # OR ITS LICENSORS AND IS SUBJECT TO LICENSE TERMS.
 
-# Use this run.do file to run this example.
+# This FSM.do file is associated with Katilynn Mar and Juliette Reeder's Lab 0
 # Either bring up ModelSim and type the following at the "ModelSim>" prompt:
-#     do run.do
+#     do FSM.do
 # or, to run from a shell, type the following at the shell prompt:
-#     vsim -do run.do -c
+#     vsim -do FSM.do -c
 # (omit the "-c" to see the GUI while running from the shell)
 
 onbreak {resume}
@@ -37,22 +37,15 @@ view wave
 
 -- display input and output signals as hexidecimal values
 # Diplays All Signals recursively
-add wave -hex -r /stimulus/*
+#add wave -hex -r /stimulus/*
 
-# Adapt to make Waveform Viewer prettier :)
-#add wave -noupdate -divider -height 32 "MIPS Datapath"
-#add wave -hex /stimulus/dut/mips/dp/*
-#add wave -noupdate -divider -height 32 "MIPS Control"
-#add wave -hex /stimulus/dut/mips/c/*
-#add wave -noupdate -divider -height 32 "Instruction Memory"
-#add wave -hex /stimulus/dut/imem/*
-#add wave -noupdate -divider -height 32 "Data Memory (Storage)"
-#add wave -hex /stimulus/dut/dmem/*
-#add wave -noupdate -divider -height 32 "Register File"
-#add wave -hex /stimulus/dut/mips/dp/rf/*
-#add wave -hex /stimulus/dut/mips/dp/rf/rf
-#add list -hex -r /stimulus/*
-#add log -hex -r /*
+add wave -noupdate -divider -height 32 "Inputs"
+add wave -hex /stimulus/dut/reset_b
+add wave -hex /stimulus/dut/clock
+add wave -hex /stimulus/dut/In
+
+add wave -noupdate -divider -height 32 "Outputs"
+add wave -hex /stimulus/dut/Out
 
 -- Set Wave Output Items 
 TreeUpdate [SetDefaultTree]
@@ -68,5 +61,3 @@ configure wave -childrowmargin 2
 
 -- Run the Simulation
 run 120ns
-
-
