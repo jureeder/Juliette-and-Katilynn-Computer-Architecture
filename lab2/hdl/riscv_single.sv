@@ -40,7 +40,7 @@ module testbench();
    initial
      begin
 	string memfilename;
-        memfilename = {"../riscvtest/riscvtest.memfile"};
+        memfilename = {"../riscvtest/test.memfile"};
         $readmemh(memfilename, dut.imem.RAM);
      end
 
@@ -84,9 +84,10 @@ module riscvsingle (input  logic        clk, reset,
    logic [1:0] 				ResultSrc;
    logic [2:0]        ImmSrc;
    logic [3:0] 				ALUControl;
+   logic              MemRead;
    
    controller c (Instr[6:0], Instr[14:12], Instr[30], Carry, Negative, V, Zero,
-		 ResultSrc, MemWrite, PCSrc,
+		 ResultSrc, MemWrite, MemRead, PCSrc,
 		 ALUSrc, RegWrite, Jump,
 		 ImmSrc, ALUControl);
    datapath dp (clk, reset, ResultSrc, PCSrc,
@@ -102,7 +103,7 @@ module controller (input  logic [6:0] op,
 		   input  logic       funct7b5,
 		   input  logic       Carry, Negative, V, Zero,
 		   output logic [1:0] ResultSrc,
-		   output logic       MemWrite,
+		   output logic       MemWrite, MemRead,
 		   output logic       PCSrc, 
        output logic [1:0] ALUSrc,
 		   output logic       RegWrite, Jump,
@@ -111,42 +112,56 @@ module controller (input  logic [6:0] op,
    
    logic [1:0] 			      ALUOp;
    logic 			      Branch;
+   logic            branchaction;
    
-   maindec md (op, ResultSrc, MemWrite, Branch, Jump,
+   maindec md (op, ResultSrc, MemWrite, MemRead, Branch, Jump,
 	        RegWrite, ALUSrc, ImmSrc, ALUOp);
    aludec ad (op[5], funct3, funct7b5, ALUOp, ALUControl);
    //                             beq bne                           blt bge                             bltu bgeu 
-   assign PCSrc = Branch & (~funct3[2] & (Zero ^ funct3[0]) | (~funct3[1] & funct3[0] ^ (Negative ^ V)) | funct3[1] & funct3[0] ^ (~Carry)) | Jump;
+   //assign PCSrc = (Branch & (~funct3[2] & (Zero ^ funct3[0]) | (~funct3[1] & funct3[0] ^ (Negative ^ V)) | funct3[1] & funct3[0] ^ (~Carry)) )| Jump;
+   assign PCSrc = (Branch & branchaction) | Jump;
    
+   always_comb 
+    case(funct3)
+      3'b000: branchaction = Zero; //beq
+      3'b001: branchaction = ~Zero; //bnq
+      3'b100: branchaction = Negative ^ V; //blt
+      3'b101: branchaction = ~(Negative ^ V); //bge
+      3'b110: branchaction = ~Carry; //bltu
+      3'b111: branchaction = Carry; //bgeu
+      default: branchaction = 1'b0; 
+    endcase
+
 endmodule // controller
 
 module maindec (input  logic [6:0] op,
 		output logic [1:0] ResultSrc,
 		output logic       MemWrite,
+    output logic       MemRead,
 		output logic 	     Branch, Jump,
 		output logic 	     RegWrite, 
     output logic [1:0] ALUSrc,
 		output logic [2:0] ImmSrc,
 		output logic [1:0] ALUOp);
    
-   logic [12:0] 		   controls;
+   logic [13:0] 		   controls;
    
-   assign {RegWrite, ImmSrc, ALUSrc, MemWrite,
+   assign {RegWrite, ImmSrc, ALUSrc, MemWrite, MemRead,
 	   ResultSrc, Branch, ALUOp, Jump} = controls;
    
    always_comb
      case(op)
-       // RegWrite_ImmSrc_ALUSrc_MemWrite_ResultSrc_Branch_ALUOp_Jump
-       7'b0000011: controls = 13'b1_000_01_0_01_0_00_0; // I-type load 
-       7'b0010011: controls = 13'b1_000_01_0_00_0_10_0; // I–type ALU
-       7'b0010111: controls = 13'b1_100_11_0_00_0_11_0; // auipc
-       7'b0100011: controls = 13'b0_001_01_1_xx_0_00_0; // S-type
-       7'b0110011: controls = 13'b1_xxx_00_0_00_0_10_0; // R–type ALU
-       7'b0110111: controls = 13'b1_100_x1_0_00_0_00_0; // lui 
-       7'b1100011: controls = 13'b0_010_11_0_xx_1_01_0; // B-type
-       7'b1100111: controls = 13'b1_000_01_0_10_0_00_1; // jalr 
-       7'b1101111: controls = 13'b1_011_11_0_10_0_00_1; // jal
-       default: controls    = 13'bx_xxx_xx_x_xx_x_xx_x; // ???
+       // RegWrite_ImmSrc_ALUSrc_MemWrite_MemRead_ResultSrc_Branch_ALUOp_Jump
+       7'b0000011: controls = 14'b1_000_01_0_1_01_0_00_0; // I-type load 
+       7'b0010011: controls = 14'b1_000_01_0_0_00_0_10_0; // I–type ALU
+       7'b0010111: controls = 14'b1_100_11_0_0_00_0_11_0; // auipc
+       7'b0100011: controls = 14'b0_001_01_1_0_xx_0_00_0; // S-type
+       7'b0110011: controls = 14'b1_xxx_00_0_0_00_0_10_0; // R–type ALU
+       7'b0110111: controls = 14'b1_100_x1_0_0_00_0_00_0; // lui 
+       7'b1100011: controls = 14'b0_010_00_0_0_xx_1_01_0; // B-type
+       7'b1100111: controls = 14'b1_000_01_0_0_10_0_00_1; // jalr 
+       7'b1101111: controls = 14'b1_011_11_0_0_10_0_00_1; // jal
+       default: controls    = 14'bx_xxx_xx_x_x_xx_x_xx_x; // ???
      endcase // case (op)
    
 endmodule // maindec
@@ -166,7 +181,8 @@ module aludec (input  logic       opb5,
      case(ALUOp)
        2'b00: ALUControl = 4'b0000; // addition, SRL SRLI
        2'b01: ALUControl = 4'b0001; // subtraction, SRA SRAI
-       2'b11: ALUControl = 4'b1111;
+       //2'b10: ALUControl = 4'b1110; // lui !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       //2'b11: ALUControl = 4'b1111; // auipc: addition, make ALUOp = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
        default: case(funct3) // R–type or I–type ALU
 		  
       3'b000: if (RtypeSub)
@@ -184,7 +200,7 @@ module aludec (input  logic       opb5,
       3'b100: ALUControl = 4'b0110; // xor //Abritrary ALUControl
 		  3'b110: ALUControl = 4'b0011; // or, ori
 		  3'b111: ALUControl = 4'b0010; // and, andi
-		  3'b001: ALUControl = 4'b0111; // sll, slli //arbitrary SHIFTControl
+		  3'b001: ALUControl = 4'b0111; // sll, slli 
 		  default: ALUControl = 4'bxxxx; // ???
 		endcase // case (funct3)       
      endcase // case (ALUOp)
@@ -213,7 +229,7 @@ module datapath (input  logic        clk, reset,
    logic [15:0]          LoadHW;
    logic [7:0]           StoreByte;
    logic [15:0]          StoreHW;
-   logic [31:0]          lbu, lhu, lb, lh;
+   logic [31:0]          lbu, lhu, lb, lh, lw;
    logic [31:0]          sb, sh, sw;
    logic [31:0]          LoadResult;
    logic [31:0]          StoreResult;
@@ -235,18 +251,30 @@ module datapath (input  logic        clk, reset,
    //mux3 #(32) resultmux (ALUResult, ReadData, PCPlus4, ResultSrc, Result); 
    mux4 #(32) resultmux (ALUResult, ReadData, PCPlus4, LoadResult, ResultSrc, Result); //Result Mux!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    // load/store instructions
-   mux4 #(8) loadbytemux (ReadData[7:0], ReadData[15:8], ReadData[25:16], ReadData[31:24], ALUResult[1:0], LoadByte); 
-   mux2 #(2) loadhwmux (ReadData[15:0], ReadData[31:16], ALUResult[1], LoadHW); 
-   mux4 #(8) storebytemux (WriteData[7:0], WriteData[15:8], WriteData[25:16], WriteData[31:24], ALUResult[1:0], StoreByte);  // Is WriteData correct??????????????????????????????????????????
-   mux2 #(2) storehwmux (WriteData[15:0], WriteData[31:16], ALUResult[1], StoreHW); 
+   mux4 #(8) loadbytemux (ReadData[7:0], ReadData[15:8], ReadData[23:16], ReadData[31:24], ALUResult[1:0], LoadByte); 
+   mux2w16 #(16) loadhwmux (ReadData[15:0], ReadData[31:16], ALUResult[1], LoadHW); 
+   mux4 #(8) storebytemux (WriteData[7:0], WriteData[15:8], WriteData[23:16], WriteData[31:24], ALUResult[1:0], StoreByte);  // Is WriteData correct??????????????????????????????????????????
+   mux2w16 #(16) storehwmux (WriteData[15:0], WriteData[31:16], ALUResult[1], StoreHW); 
    //mux to choose between load/store ?? opcode ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
    assign lbu = {24'b0, LoadByte};
    assign lhu = {16'b0, LoadHW};
    assign lb = {{24{LoadByte[7]}}, LoadByte};
    assign lh = {{16{LoadHW[15]}}, LoadHW};
    assign lw = ReadData;
-   assign sb = {{24{StoreByte[7]}}, StoreByte};
-   assign sh = {{16{StoreHW[15]}}, StoreHW};
+   always_comb
+    case (ALUResult[1:0])
+      2'b00: sb = {{24{StoreByte[7]}}, StoreByte};
+      2'b01: sb = {{16{StoreByte[7]}}, StoreByte, {8{StoreByte[7]}}};
+      2'b10: sb = {{8{StoreByte[7]}}, StoreByte, {16{StoreByte[7]}}};
+      2'b11: sb = {StoreByte, {24{StoreByte[7]}}};
+      default: sb = 32'bx; // undefined
+    endcase
+  always_comb
+    case (ALUResult[1])
+      1'b0: sh = {{16{StoreHW[15]}}, StoreHW};
+      1'b1: sh = {StoreHW, {16{StoreHW[15]}}};
+      default: sh = 32'bx; // undefined
+    endcase
    assign sw = ReadData;
    mux5 #(32) loadresultmux (lb, lh, lw, lbu, lhu, Instr[14:12], LoadResult); // Funct3 = Instr[14:12] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    mux3 #(32) storeresultmux (sb, sh, sw, Instr[14:12], StoreResult); // Funct3 = Instr[14:12] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -313,9 +341,18 @@ module mux2 #(parameter WIDTH = 8)
    
 endmodule // mux2
 
+module mux2w16 #(parameter WIDTH = 16)
+   (input  logic [WIDTH-1:0] d0, d1,
+    input logic 	     s,
+    output logic [WIDTH-1:0] y);
+   
+  assign y = s ? d1 : d0;
+   
+endmodule // mux2w16
+
 module mux3 #(parameter WIDTH = 8)
    (input  logic [WIDTH-1:0] d0, d1, d2,
-    input logic [1:0] 	     s,
+    input logic [2:0] 	     s,
     output logic [WIDTH-1:0] y);
    
   assign y = s[1] ? d2 : (s[0] ? d1 : d0);
@@ -323,7 +360,7 @@ module mux3 #(parameter WIDTH = 8)
 endmodule // mux3
 
 module mux4 #(parameter WIDTH = 8)
-   (input  logic [WIDTH-1:0] d0, d1, d2, d3
+   (input  logic [WIDTH-1:0] d0, d1, d2, d3,
     input logic [1:0] 	     s,
     output logic [WIDTH-1:0] y);
    
@@ -331,8 +368,8 @@ module mux4 #(parameter WIDTH = 8)
    
 endmodule // mux4
 
-module mux5 #(parameter WIDTH = 8)
-   (input  logic [WIDTH-1:0] d0, d1, d2, d3, d4
+module mux5 #(parameter WIDTH = 32)
+   (input  logic [WIDTH-1:0] d0, d1, d2, d3, d4,
     input logic [2:0] 	     s,
     output logic [WIDTH-1:0] y);
    
@@ -405,6 +442,7 @@ module alu (input  logic [31:0] a, b, PC,
        4'b1001:  result = a >>> b;      // sra
        4'b0011:  result = a | b;        // or
        4'b0010:  result = a & b;        // and
+       4'b1110:  result = b;            // lui
        4'b1111:  result = sum1;         // auipc
        default: result = 32'bx;
      endcase
@@ -431,7 +469,7 @@ module regfile (input  logic        clk,
 
    always_ff @(posedge clk)
      if (we3) rf[a3] <= wd3;	
-
+   //assign rf[0] = 32'h00000000;
    assign rd1 = (a1 != 0) ? rf[a1] : 0;
    assign rd2 = (a2 != 0) ? rf[a2] : 0;
    
