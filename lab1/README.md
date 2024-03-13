@@ -1,3 +1,7 @@
+We modified sim.c and isa.h
+
+________________________________________________________________________
+
 These files are used for Laboratory 1 within ECEN 4243 : Computer
 Architecture.  The C files need a compiler and it is recommended to
 use the ECE file server to compile these files.
