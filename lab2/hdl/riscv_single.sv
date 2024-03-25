@@ -1,11 +1,3 @@
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-// THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE THIS CODE
-
 // riscvsingle.sv
 
 // RISC-V single-cycle processor
@@ -51,6 +43,7 @@ module testbench();
      begin
 	string memfilename;
         memfilename = {"../riscvtest/test.memfile"};
+        //memfilename = {"../riscvtest/riscvtest.memfile"};
         $readmemh(memfilename, dut.imem.RAM);
      end
 
@@ -97,17 +90,17 @@ module riscvsingle (input  logic        clk, reset,
    logic [2:0]        ImmSrc;
    logic [3:0] 				ALUControl;
    logic              MemRead;
-   logci              AddUIPC;
+   logic              AddUIPC;
    
    controller c (Instr[6:0], Instr[14:12], Instr[30], Carry, Negative, V, Zero,
 		 ResultSrc, MemWrite, AddUIPC, MemAccess, MemRead, PCSrc,
 		 ALUSrc, RegWrite, Jump,
 		 ImmSrc, ALUControl);
    datapath dp (clk, reset, ResultSrc, PCSrc,
-		ALUSrc, RegWrite,
+		ALUSrc, RegWrite, AddUIPC,
 		ImmSrc, ALUControl,
 		 Negative, Zero, V, Carry, PC, Instr,
-		ALUResult, WriteData, ReadData, AddUIPC, PCReady, Mask);
+		ALUResult, WriteData, ReadData, PCReady, Mask);
    
 endmodule // riscvsingle
 
@@ -116,7 +109,7 @@ module controller (input  logic [6:0] op,
 		   input  logic       funct7b5,
 		   input  logic       Carry, Negative, V, Zero,
 		   output logic [1:0] ResultSrc,
-		   output logic       MemWrite, AddUIPC, MemAccess,
+		   output logic       MemWrite, AddUIPC, MemAccess, MemRead,
 		   output logic       PCSrc, 
        output logic [1:0] ALUSrc,
 		   output logic       RegWrite, Jump, 
@@ -139,7 +132,7 @@ module controller (input  logic [6:0] op,
    always_comb 
     case(funct3)
       3'b000: BranchAction = Zero; //beq
-      3'b001: BranchAction = ~Zero; //bnq
+      3'b001: BranchAction = ~Zero; //bne
       3'b100: BranchAction = Negative ^ V; //blt
       3'b101: BranchAction = ~(Negative ^ V); //bge
       3'b110: BranchAction = ~Carry; //bltu
@@ -170,9 +163,9 @@ module maindec (input  logic [6:0] op,
        7'b0000011: controls = 14'b1_000_01_0_1_01_0_00_0; // I-type load 
        7'b0010011: controls = 14'b1_000_01_0_0_00_0_10_0; // I–type ALU
        7'b0010111: controls = 14'b1_100_11_0_0_00_0_11_0; // auipc
-       7'b0100011: controls = 14'b0_001_01_1_0_00_0_00_0; // S-type
+       7'b0100011: controls = 14'b0_001_01_1_0_01_0_00_0; // S-type
        7'b0110011: controls = 14'b1_xxx_00_0_0_00_0_10_0; // R–type ALU
-       7'b0110111: controls = 14'b1_100_x1_0_0_00_0_00_0; // lui 
+       7'b0110111: controls = 14'b1_100_11_0_0_00_0_11_0; // lui 
        7'b1100011: controls = 14'b0_010_00_0_0_00_1_01_0; // B-type
        7'b1100111: controls = 14'b1_000_01_0_0_10_0_00_1; // jalr 
        7'b1101111: controls = 14'b1_011_11_0_0_10_0_00_1; // jal
@@ -202,20 +195,22 @@ module aludec (input  logic       opb5,
 		          else
 		            ALUControl = 4'b0000; // add, addi
 
-      3'b101: if (RtypeSRA)
-		    ALUControl = 4'b1000; // srl, srli
-		  else
-		    ALUControl = 4'b1001; // sra, srai
+              3'b101: if (RtypeSRA)
+		            ALUControl = 4'b1000; // srl, srli
+		          else
+		            ALUControl = 4'b1001; // sra, srai
 
-      3'b001: ALUControl = 4'b0110; // sll
-      3'b010: ALUControl = 4'b0101; // slt, slti
-      3'b011: ALUControl = 4'b0111; // sltu
-      3'b100: ALUControl = 4'b0100; // xor
-		  3'b101: ALUControl = funct7b5 ? 4'b1001 : 4'b1000; // sra, srl
-		  3'b110: ALUControl = 4'b0011; // or, ori
-		  3'b111: ALUControl = 4'b0010; // and, andi
-		  default: ALUControl = 4'bxxxx; // ???
-		endcase // case (funct3) 
+              3'b001: ALUControl = 4'b0110; // sll
+              3'b010: ALUControl = 4'b0101; // slt, slti
+              3'b011: ALUControl = 4'b0111; // sltu
+              3'b100: ALUControl = 4'b0100; // xor
+		          3'b101: ALUControl = funct7b5 ? 4'b1001 : 4'b1000; // sra, srl
+		          3'b110: ALUControl = 4'b0011; // or, ori
+		          3'b111: ALUControl = 4'b0010; // and, andi
+      
+		          default: ALUControl = 4'bxxxx; // ???
+		    endcase // case (funct3) 
+    2'b11: ALUControl = 4'b1110; // lui
     default: ALUControl = 4'b1010;      
   endcase // case (ALUOp)
    
@@ -225,22 +220,22 @@ module datapath (input  logic        clk, reset,
 		 input  logic [1:0]  ResultSrc,
 		 input  logic 	     PCSrc, 
      input  logic [1:0]  ALUSrc,
-		 input  logic 	     RegWrite,
+		 input  logic 	     RegWrite, AddUIPC,
 		 input  logic [2:0]  ImmSrc,
 		 input  logic [3:0]  ALUControl,
-		 output logic 	     Negative, Zero, V, Carry,
+		 output logic 	     Negative, Zero, V, Carry, 
 		 output logic [31:0] PC,
 		 input  logic [31:0] Instr,
 		 output logic [31:0] ALUResult, WriteData,
-		 input  logic [31:0] ReadData
-     output logic        AddUIPC, PCReady, 
+		 input  logic [31:0] ReadData,
+     output logic        PCReady, 
      output logic [3:0]  Mask);
    
    logic [31:0] 		     PCNext, PCPlus4, PCTarget, PCTargetSrcA;
    logic [31:0] 		     ImmExt;
    logic [31:0] 		     SrcA, SrcB;
    logic [31:0] 		     Result;
-   logic [31:0]          Rd1;
+   logic [31:0]          Rd1, Rd2;
    logic [7:0]           LoadByte;
    logic [15:0]          LoadHW;
    logic [7:0]           StoreByte;
@@ -248,31 +243,35 @@ module datapath (input  logic        clk, reset,
    logic [31:0]          lbu, lhu, lb, lh, lw;
    logic [31:0]          sb, sh, sw;
    logic [31:0]          LoadResult;
-   logic [31:0]          StoreResult;
 
    
    // next PC logic
    flopr #(32) pcreg (clk, reset, PCNext, PC);
    adder  pcadd4 (PC, 32'd4, PCPlus4);
-   adder  pcaddbranch (PCTargetSrcA, ImmExt, PCTarget);
+   adder  pcaddbranch (PC, ImmExt, PCTarget);
    mux2 #(32)  pcmux (PCPlus4, PCTarget, PCSrc, PCNext);
    mux2 #(32)  pctargetmux(PC, SrcA, ALUSrc[0], PCTargetSrcA);
    // register file logic
    regfile  rf (clk, RegWrite, Instr[19:15], Instr[24:20],
-	       Instr[11:7], Result, Rd1, WriteData);
-   mux2 #(32) srcamux (Rd1, PC, ALUSrc[1], SrcA);
+	       Instr[11:7], Result, Rd1, Rd2);
+   mux2 #(32) srcamux (Rd1, PC, AddUIPC, SrcA);
    extend  ext (Instr[31:7], ImmSrc, ImmExt);
    // ALU logic
-   mux2 #(32)  srcbmux (WriteData, ImmExt, ALUSrc[0], SrcB); 
-   alu  alu (SrcA, SrcB, PC, ALUControl, ALUResult, Carry, Negative, V, Zero);
-   //mux3 #(32) resultmux (ALUResult, ReadData, PCPlus4, ResultSrc, Result); 
-   mux4 #(32) resultmux (ALUResult, ReadData, PCPlus4, LoadResult, ResultSrc, Result); //Result Mux!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   mux2 #(32)  srcbmux (Rd2, ImmExt, ALUSrc[0], SrcB); 
+   alu  alu (SrcA, SrcB, PCTargetSrcA, ALUControl, ALUResult, Carry, Negative, V, Zero);
+   mux3 #(32) resultmux (ALUResult, LoadResult, PCPlus4, ResultSrc, Result); 
+   //mux4 #(32) resultmux (ALUResult, ReadData, PCPlus4, LoadResult, ResultSrc, Result); //Result Mux!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    // load/store instructions
+   //assign Mask = ALUResult[1:0];
+   //subwordwrite sww(ToWrite,Instr[13:12],ALUResult[1:0],WriteData,ByteMask); 
+   //subwordread swr(ReadData,Instr[14:12],ALUResult[1:0],FromRead); 
+   
    mux4 #(8) loadbytemux (ReadData[7:0], ReadData[15:8], ReadData[23:16], ReadData[31:24], ALUResult[1:0], LoadByte); 
    mux2w16 #(16) loadhwmux (ReadData[15:0], ReadData[31:16], ALUResult[1], LoadHW); 
-   mux4 #(8) storebytemux (WriteData[7:0], WriteData[15:8], WriteData[23:16], WriteData[31:24], ALUResult[1:0], StoreByte);  // Is WriteData correct??????????????????????????????????????????
-   mux2w16 #(16) storehwmux (WriteData[15:0], WriteData[31:16], ALUResult[1], StoreHW); 
+   mux4 #(8) storebytemux (Rd2[7:0], Rd2[15:8], Rd2[23:16], Rd2[31:24], ALUResult[1:0], StoreByte);  // Is WriteData correct??????????????????????????????????????????
+   mux2w16 #(16) storehwmux (Rd2[15:0], Rd2[31:16], ALUResult[1], StoreHW); 
    //mux to choose between load/store ?? opcode ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+   
    assign lbu = {24'b0, LoadByte};
    assign lhu = {16'b0, LoadHW};
    assign lb = {{24{LoadByte[7]}}, LoadByte};
@@ -280,22 +279,22 @@ module datapath (input  logic        clk, reset,
    assign lw = ReadData;
    always_comb
     case (ALUResult[1:0])
-      2'b00: sb = {{24{StoreByte[7]}}, StoreByte};
-      2'b01: sb = {{16{StoreByte[7]}}, StoreByte, {8{StoreByte[7]}}};
-      2'b10: sb = {{8{StoreByte[7]}}, StoreByte, {16{StoreByte[7]}}};
+      2'b00: sb = {ReadData[31:8], StoreByte};
+      2'b01: sb = {ReadData[31:16], StoreByte, ReadData[7:0]};
+      2'b10: sb = {ReadData[31:24], StoreByte, ReadData[15:0]};
       2'b11: sb = {StoreByte, {24{StoreByte[7]}}};
       default: sb = 32'bx; // undefined
     endcase
   always_comb
     case (ALUResult[1])
-      1'b0: sh = {{16{StoreHW[15]}}, StoreHW};
-      1'b1: sh = {StoreHW, {16{StoreHW[15]}}};
+      1'b0: sh = {ReadData[31:16], StoreHW};
+      1'b1: sh = {StoreHW, ReadData[15:0]};
       default: sh = 32'bx; // undefined
     endcase
-   assign sw = ReadData;
+   assign sw = Rd2;
    mux5 #(32) loadresultmux (lb, lh, lw, lbu, lhu, Instr[14:12], LoadResult); // Funct3 = Instr[14:12] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   mux3 #(32) storeresultmux (sb, sh, sw, Instr[14:12], StoreResult); // Funct3 = Instr[14:12] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  
+   mux3 #(32) storeresultmux (sb, sh, sw, Instr[13:12], WriteData); // Funct3 = Instr[14:12] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
 
 endmodule // datapath
 
@@ -321,7 +320,7 @@ module extend (input  logic [31:7] instr,
        // J−type (jal)
        3'b011:  immext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
        // U-type
-       3'b100:  immext = {instr[30:12], 12'b0};
+       3'b100:  immext = {instr[31:12], 12'b0};
        default: immext = 32'bx; // undefined
      endcase // case (immsrc)
    
@@ -369,7 +368,7 @@ endmodule // mux2w16
 
 module mux3 #(parameter WIDTH = 8)
    (input  logic [WIDTH-1:0] d0, d1, d2,
-    input logic [2:0] 	     s,
+    input logic [1:0] 	     s,
     output logic [WIDTH-1:0] y);
    
   assign y = s[1] ? d2 : (s[0] ? d1 : d0);
@@ -394,7 +393,7 @@ module mux5 #(parameter WIDTH = 32)
    
 endmodule // mux5
 
-module top (input  logic  clk, reset, PCReady
+module top (input  logic  clk, reset, PCReady,
 	    output logic [31:0] WriteData, DataAdr,
 	    output logic	      MemWrite, MemStrobe);
    
@@ -418,9 +417,10 @@ module imem (input  logic [31:0] a,
    
 endmodule // imem
 
+/*
 module dmem (input  logic        clk, we,
 	     input  logic [31:0] a, wd,
-       input  logic [3:0] Mask;
+       input  logic [3:0] Mask,
 	     output logic [31:0] rd);
    
    logic [31:0] 		 RAM[255:0], BitMask;
@@ -433,6 +433,79 @@ module dmem (input  logic        clk, we,
      if (we) RAM[a[31:2]] <= (rd & ~BitMask) | wd;
    
 endmodule // dmem
+*/
+
+module dmem (input  logic        clk, we,
+	     input  logic [31:0] a, wd,
+       input  logic [3:0] Mask,
+	     output logic [31:0] rd);
+   
+   logic [31:0] 		 RAM[255:0];
+   
+   assign rd = RAM[a[31:2]]; // word aligned
+   always_ff @(posedge clk)
+     if (we) RAM[a[31:2]] <= wd;
+   
+endmodule // dmem
+
+module subwordwrite(input   logic [31:0]  ToWrite,  //added by us
+                    input   logic [1:0]   Funct3_2, ByteAdr,
+                    output  logic [31:0]  WriteData,
+                    output  logic [3:0]   ByteMask);
+    
+    always_comb begin
+      case(Funct3_2)
+        2'b00: WriteData = {4{ToWrite[7:0]}};
+        2'b01: WriteData = {2{ToWrite[15:0]}};
+        2'b10: WriteData = ToWrite;
+        default: WriteData = 2'bxx;
+      endcase
+
+      casex({Funct3_2,ByteAdr})
+        4'b00_00: ByteMask = 4'b0001;
+        4'b00_01: ByteMask = 4'b0010;
+        4'b00_10: ByteMask = 4'b0100;
+        4'b00_11: ByteMask = 4'b1000;
+        4'b01_0x: ByteMask = 4'b0011;
+        4'b01_1x: ByteMask = 4'b1100;
+        4'b10_xx: ByteMask = 4'b1111;
+        default:  ByteMask = 4'bxxxx;
+      endcase
+    end
+                
+endmodule
+
+module subwordread(input  logic [31:0]  ReadData, //added by us
+                   input  logic [2:0]   Funct3, 
+                   input  logic [1:0]   ByteAdr,
+                   output logic [31:0]  FromRead);
+              
+    logic [7:0]   Byte;
+    logic [15:0]  Halfword;
+    logic [31:0]  Word;
+
+    always_comb begin
+      case(ByteAdr)
+      2'b00: Byte = ReadData[7:0];
+      2'b01: Byte = ReadData[15:8];
+      2'b10: Byte = ReadData[23:16];
+      2'b11: Byte = ReadData[31:24];
+      default: Byte = 8'hxx;
+      endcase
+      Halfword = (ByteAdr[1]) ? ReadData[31:16] : ReadData[15:0];
+      Word = ReadData;
+
+      case(Funct3)
+      3'b000: FromRead = {{24{Byte[7]}},Byte};          //lb
+      3'b100: FromRead = {{24{1'b0}},Byte};             //lbu
+      3'b001: FromRead = {{16{Halfword[15]}},Halfword}; //lh
+      3'b101: FromRead = {{16{1'b0}},Halfword};         //lhu
+      3'b010: FromRead = Word;                          //lw
+      default: FromRead = 32'hxxxxxxxx;
+      endcase
+    end
+
+endmodule
 
 module alu (input  logic [31:0] a, b, PC,
             input  logic [3:0] 	alucontrol,
@@ -461,8 +534,8 @@ module alu (input  logic [31:0] a, b, PC,
        4'b0101:  result = sum[31] ^ v;  // slt   
        4'b1010:  result = ~carry;       // sltu
        4'b0110:  result = a ^ b;        // xor
-       4'b1000:  result = a >> b[4:0]   // srl   
-       4'b1001:  result = a >>> b]4:0]; // sra
+       4'b1000:  result = a >> b[4:0]   ;// srl   
+       4'b1001:  result = a >>> b[4:0]; // sra
        4'b0011:  result = a | b;        // or
        4'b0010:  result = a & b;        // and
        4'b1110:  result = b;            // lui
