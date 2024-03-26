@@ -1,3 +1,5 @@
+// THIS ONE IS FOR VIVADO AND INCLUDES THE ADDITIONAL VARIABLES
+
 // riscvsingle.sv
 
 // RISC-V single-cycle processor
