@@ -92,7 +92,7 @@ module testbench();
    initial
      begin
 	string memfilename;
-        memfilename = {"../riscvtest/riscvtest.memfile"};
+        memfilename = {"../riscvtest/test.memfile"};
 	$readmemh(memfilename, dut.imem.RAM);
      end
    
@@ -412,8 +412,8 @@ module datapath(input logic clk, reset,
    mux3   #(32)  fbemux(RD2E, ResultW, ALUResultM, ForwardBE, WriteDataE);
    mux2   #(32)  srcamux(ForwardAResult, PCE, AddUIPCE, SrcAE);
    mux2   #(32)  srcbmux(WriteDataE, ImmExtE, ALUSrcE[0], SrcBE);
-   store         subwrite(WriteDataInputM,InstrD[13:12],ALUResultW[1:0],WriteDataM,Mask); 
-   load          subread(ReadDataInputW,InstrD[14:12],ALUResultW[1:0],ReadDataW); 
+   store         subwrite(WriteDataInputM,funct3D[1:0],ALUResultM[1:0],WriteDataM,Mask); 
+   load          subread(ReadDataInputW,funct3D,ALUResultW[2:0],ReadDataW); 
    alu           alu(SrcAE, SrcBE, ALUControlE, ALUResultE, CarryE, NegativeE, VE, ZeroE);
    adder         branchadd(ImmExtE, PCE, PCTargetE);
   
@@ -601,9 +601,18 @@ module dmem (input  logic        clk, we,
    
    assign rd = RAM[a[31:2]]; // word aligned
    always_ff @(posedge clk)
-     //if (we) RAM[a[31:2]] <= wd;
-     if (we) RAM[a[31:2]] <= (rd & ~BitMask) | wd;
-   
+     // if (we) RAM[a[31:2]] <= wd;
+     // if (we) RAM[a[31:2]] <= (rd & ~BitMask) | wd; 
+     if (we) 
+     begin 
+      if (Mask == 4'b0001) RAM[a[31:2]][7:0] <= wd[7:0];
+      if (Mask == 4'b0010) RAM[a[31:2]][15:8] <= wd[15:8];
+      if (Mask == 4'b0100) RAM[a[31:2]][23:16] <= wd[23:16];
+      if (Mask == 4'b1000) RAM[a[31:2]][31:24] <= wd[31:24];
+      if (Mask == 4'b0011) RAM[a[31:2]][15:0] <= wd[15:0];
+      if (Mask == 4'b1100) RAM[a[31:2]][31:16] <= wd[31:16];
+      if (Mask == 4'b1111) RAM[a[31:2]] <= wd;
+     end
 endmodule // dmem
 
 module store(input   logic [31:0]  ToWrite,  //added by us
@@ -631,7 +640,7 @@ module store(input   logic [31:0]  ToWrite,  //added by us
       endcase
     end
 endmodule
-  
+
   module load(input  logic [31:0]  ReadData,
                    input  logic [2:0]   Funct3, 
                    input  logic [1:0]   Offset,
