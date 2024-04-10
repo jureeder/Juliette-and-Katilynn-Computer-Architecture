@@ -163,22 +163,24 @@ module riscv(input  logic        clk, reset,
 
    logic [1:0] 			 ForwardAE, ForwardBE;
    logic 			       StallF, StallD, FlushD, FlushE;
+   logic [2:0]       Funct3M, Funct3W;
 
    logic [4:0] 			 Rs1D, Rs2D, Rs1E, Rs2E, RdE, RdM, RdW;
    
    controller c(clk, reset,
 		opD, funct3D, funct7b5D, ImmSrcD,
 		FlushE, CarryE, NegativeE, VE, ZeroE, PCSrcE, ALUControlE, ALUSrcE, ResultSrcEb0,
-		MemWriteM, AddUIPCE, RegWriteM, 
-		RegWriteW, ResultSrcW);
+		MemWriteM, AddUIPCE, RegWriteM, Funct3M,
+		Funct3W, RegWriteW, ResultSrcW);
 
    datapath dp(clk, reset,
                StallF, PCF, InstrF,
 	       opD, funct3D, funct7b5D, StallD, FlushD, ImmSrcD,
 	       FlushE, ForwardAE, ForwardBE, PCSrcE, ALUControlE, ALUSrcE,CarryE, NegativeE, VE, ZeroE,
-               MemWriteM, WriteDataM, ALUResultM, ReadDataM,
-               RegWriteW, AddUIPCE, ResultSrcW,
+               MemWriteM, WriteDataM, ALUResultM, ReadDataM, Funct3M,
+               RegWriteW, AddUIPCE, ResultSrcW, Funct3W,
                Rs1D, Rs2D, Rs1E, Rs2E, RdE, RdM, RdW, Mask);
+               
 
    hazard  hu(Rs1D, Rs2D, Rs1E, Rs2E, RdE, RdM, RdW,
               PCSrcE, ResultSrcEb0, RegWriteM, RegWriteW,
@@ -201,8 +203,10 @@ module controller(input  logic		 clk, reset,
                   output logic [1:0]    ResultSrcEb0, // for Hazard Unit
                   // Memory stage control signals
                   output logic 	     MemWriteM, AddUIPCE,
-                  output logic 	     RegWriteM, // for Hazard Unit				  
+                  output logic 	     RegWriteM, // for Hazard Unit	
+                  output logic [2:0] Funct3M,			  
                   // Writeback stage control signals
+                  output logic [2:0] Funct3W,			
                   output logic 	     RegWriteW, // for datapath and Hazard Unit
                   output logic [1:0] ResultSrcW);
 
@@ -216,6 +220,7 @@ module controller(input  logic		 clk, reset,
    logic [3:0] 		 ALUControlD;
    logic [1:0]     ALUSrcD;
    logic           BranchActionE;
+   logic [2:0]     Funct3E;		
    
    // Decode stage logic
    maindec md(opD, ResultSrcD, MemWriteD, BranchD,
@@ -223,9 +228,9 @@ module controller(input  logic		 clk, reset,
    aludec  ad(opD[5], funct3D, funct7b5D, ALUOpD, ALUControlD);
    
    // Execute stage pipeline control register and logic
-   floprc #(12) controlregE(clk, reset, FlushE,
-                            {RegWriteD, ResultSrcD, MemWriteD, JumpD, BranchD, ALUControlD, ALUSrcD},
-                            {RegWriteE, ResultSrcE, MemWriteE, JumpE, BranchE, ALUControlE, ALUSrcE});
+   floprc #(15) controlregE(clk, reset, FlushE,
+                            {RegWriteD, ResultSrcD, MemWriteD, JumpD, BranchD, ALUControlD, ALUSrcD, funct3D},
+                            {RegWriteE, ResultSrcE, MemWriteE, JumpE, BranchE, ALUControlE, ALUSrcE, Funct3E});
 
    assign PCSrcE = (BranchE & BranchActionE) | JumpE;
    assign AddUIPCE = (opD == 7'b0010111); // auipc     ask about if we got the stages correctly!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -234,17 +239,17 @@ module controller(input  logic		 clk, reset,
    assign ResultSrcEb0 = ResultSrcE[0];
    
    // Memory stage pipeline control register
-   flopr #(4) controlregM(clk, reset,
-                          {RegWriteE, ResultSrcE, MemWriteE},
-                          {RegWriteM, ResultSrcM, MemWriteM});
+   flopr #(7) controlregM(clk, reset,
+                          {RegWriteE, ResultSrcE, MemWriteE, Funct3E},
+                          {RegWriteM, ResultSrcM, MemWriteM, Funct3M});
    
    // Writeback stage pipeline control register
-   flopr #(3) controlregW(clk, reset,
-                          {RegWriteM, ResultSrcM},
-                          {RegWriteW, ResultSrcW});     
+   flopr #(6) controlregW(clk, reset,
+                          {RegWriteM, ResultSrcM, Funct3M},
+                          {RegWriteW, ResultSrcW, Funct3W});     
 
    always_comb 
-    case(funct3E)
+    case(Funct3E)
       3'b000: BranchActionE = ZeroE; //beq
       3'b001: BranchActionE = ~ZeroE; //bne
       3'b100: BranchActionE = NegativeE ^ VE; //blt
@@ -349,9 +354,11 @@ module datapath(input logic clk, reset,
                 input logic 	    MemWriteM, 
                 output logic [31:0] WriteDataM, ALUResultM,
                 input logic [31:0]  ReadDataM,
+                input logic [2:0]   Funct3M, //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 // Writeback stage signals
                 input logic 	    RegWriteW, AddUIPCE, 
                 input logic [1:0]   ResultSrcW,
+                input logic [2:0]   Funct3W, //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 // Hazard Unit signals 
                 output logic [4:0]  Rs1D, Rs2D, Rs1E, Rs2E,
                 output logic [4:0]  RdE, RdM, RdW,
@@ -380,7 +387,6 @@ module datapath(input logic clk, reset,
    logic [31:0] 		    PCPlus4M;
    logic [31:0]         InstrM;
    logic [31:0]         WriteDataInputM; 
-   logic [2:0]          Funct3M;
    // Writeback stage signals
    logic [31:0] 		    ALUResultW;
    logic [31:0]         InstrW;
@@ -388,7 +394,7 @@ module datapath(input logic clk, reset,
    logic [31:0] 		    PCPlus4W;
    logic [31:0] 		    ResultW;
    logic [31:0]         ReadDataInputW;
-   logic [2:0]          Funct3W;
+ 
 
    // Fetch stage pipeline register and logic
    mux2    #(32) pcmux(PCPlus4F, PCTargetE, PCSrcE, PCNextF);
@@ -410,9 +416,9 @@ module datapath(input logic clk, reset,
    extend         ext(InstrD[31:7], ImmSrcD, ImmExtD);
    
    // Execute stage pipeline register and logic
-   floprc #(178) regE(clk, reset, FlushE, 
-                      {funct3D, RD1D, RD2D, PCD, Rs1D, Rs2D, RdD, ImmExtD, PCPlus4D}, 
-                      {Funct3E, RD1E, RD2E, PCE, Rs1E, Rs2E, RdE, ImmExtE, PCPlus4E});
+   floprc #(175) regE(clk, reset, FlushE, 
+                      {RD1D, RD2D, PCD, Rs1D, Rs2D, RdD, ImmExtD, PCPlus4D}, 
+                      {RD1E, RD2E, PCE, Rs1E, Rs2E, RdE, ImmExtE, PCPlus4E});
    
    mux3   #(32)  faemux(RD1E, ResultW, ALUResultM, ForwardAE, ForwardAResult);
    mux3   #(32)  fbemux(RD2E, ResultW, ALUResultM, ForwardBE, WriteDataE);
@@ -424,16 +430,16 @@ module datapath(input logic clk, reset,
    adder         branchadd(ImmExtE, PCE, PCTargetE);
   
    // Memory stage pipeline register
-   flopr  #(104) regM(clk, reset, 
-                      {Funct3E, ALUResultE, WriteDataE, RdE, PCPlus4E},
-                      {Funct3M, ALUResultM, WriteDataInputM, RdM, PCPlus4M});
+   flopr  #(101) regM(clk, reset, 
+                      {ALUResultE, WriteDataE, RdE, PCPlus4E},
+                      {ALUResultM, WriteDataInputM, RdM, PCPlus4M});
 
    //assign funct3M   = InstrM[14:12];
    
    // Writeback stage pipeline register and logic
-   flopr  #(104) regW(clk, reset, 
-                      {Funct3M, ALUResultM, ReadDataM, RdM, PCPlus4M},
-                      {Funct3W, ALUResultW, ReadDataInputW, RdW, PCPlus4W});
+   flopr  #(101) regW(clk, reset, 
+                      {ALUResultM, ReadDataM, RdM, PCPlus4M},
+                      {ALUResultW, ReadDataInputW, RdW, PCPlus4W});
    mux3   #(32)  resultmux(ALUResultW, ReadDataW, PCPlus4W, ResultSrcW, ResultW);	
    //assign funct3W   = InstrW[14:12];
 endmodule
